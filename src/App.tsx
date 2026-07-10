@@ -10,6 +10,7 @@ import {
 
 type View = 'practice' | 'favorites' | 'mistakes'
 type ViewIndices = Record<View, number>
+type AnswerSelection = OptionKey[]
 
 const viewCopy: Record<
   View,
@@ -36,29 +37,71 @@ function uniqueAdd(values: string[], value: string) {
   return values.includes(value) ? values : [...values, value]
 }
 
+function normalizeAnswer(answer: Question['answer']): AnswerSelection {
+  return Array.isArray(answer) ? answer : [answer]
+}
+
+function formatAnswer(answer: AnswerSelection) {
+  return answer.join('、')
+}
+
+function sameAnswerSet(left: AnswerSelection, right: AnswerSelection) {
+  return (
+    left.length === right.length &&
+    left.every((key) => right.includes(key))
+  )
+}
+
+function toggleOption(
+  current: AnswerSelection,
+  option: OptionKey,
+): AnswerSelection {
+  return current.includes(option)
+    ? current.filter((key) => key !== option)
+    : [...current, option].sort()
+}
+
 function QuestionCard({
   question,
   selected,
+  draft,
   isFavorite,
   wrongCount,
   view,
   onAnswer,
+  onDraftChange,
   onToggleFavorite,
   onRemoveMistake,
   onRetry,
 }: {
   question: Question
-  selected?: OptionKey
+  selected?: AnswerSelection
+  draft: AnswerSelection
   isFavorite: boolean
   wrongCount: number
   view: View
-  onAnswer: (answer: OptionKey) => void
+  onAnswer: (answer: AnswerSelection) => void
+  onDraftChange: (answer: AnswerSelection) => void
   onToggleFavorite: () => void
   onRemoveMistake: () => void
   onRetry: () => void
 }) {
+  const answerKeys = normalizeAnswer(question.answer)
+  const answerText = formatAnswer(answerKeys)
+  const isMultiple = answerKeys.length > 1
   const revealed = Boolean(selected)
-  const isCorrect = selected === question.answer
+  const selectedKeys = selected ?? []
+  const isCorrect = revealed && sameAnswerSet(selectedKeys, answerKeys)
+  const canSubmit = draft.length > 0
+
+  const chooseOption = (option: OptionKey) => {
+    if (revealed) return
+    if (isMultiple) {
+      onDraftChange(toggleOption(draft, option))
+      return
+    }
+    onAnswer([option])
+  }
 
   return (
     <article className="question-card">
@@ -97,14 +140,25 @@ function QuestionCard({
       </div>
 
       <h2 className="question-stem">{question.stem}</h2>
+      {isMultiple && !revealed && (
+        <p className="multi-select-hint">
+          多选题：先选择所有你认为正确的选项，再提交答案。
+        </p>
+      )}
 
       <div className="options" aria-label="题目选项">
         {question.options.map((option) => {
-          const isSelected = selected === option.key
-          const isAnswer = revealed && option.key === question.answer
-          const isWrongChoice = revealed && isSelected && !isCorrect
+          const isSelected = revealed
+            ? selectedKeys.includes(option.key)
+            : draft.includes(option.key)
+          const isAnswer = revealed && answerKeys.includes(option.key)
+          const isWrongChoice =
+            revealed &&
+            selectedKeys.includes(option.key) &&
+            !answerKeys.includes(option.key)
           const classNames = [
             'option-button',
+            !revealed && isSelected ? 'is-selected' : '',
             isAnswer ? 'is-correct' : '',
             isWrongChoice ? 'is-wrong' : '',
             revealed && !isAnswer && !isWrongChoice ? 'is-muted' : '',
@@ -117,18 +171,37 @@ function QuestionCard({
               key={option.key}
               type="button"
               className={classNames}
-              onClick={() => onAnswer(option.key)}
+              onClick={() => chooseOption(option.key)}
               disabled={revealed}
               aria-pressed={isSelected}
             >
               <span className="option-key">{option.key}</span>
               <span className="option-text">{option.text}</span>
+              {!revealed && isMultiple && isSelected && (
+                <span className="option-mark">•</span>
+              )}
               {isAnswer && <span className="option-mark">✓</span>}
               {isWrongChoice && <span className="option-mark">×</span>}
             </button>
           )
         })}
       </div>
+
+      {isMultiple && !revealed && (
+        <div className="multi-select-actions">
+          <span>
+            已选择：{draft.length > 0 ? formatAnswer(draft) : '暂未选择'}
+          </span>
+          <button
+            className="submit-answer-button"
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => onAnswer(draft)}
+          >
+            提交答案
+          </button>
+        </div>
+      )}
 
       {revealed && (
         <div className="answer-section" aria-live="polite">
@@ -143,7 +216,7 @@ function QuestionCard({
               <p>
                 {isCorrect
                   ? '判断很稳，继续保持这个节奏。'
-                  : `正确答案是 ${question.answer}，对照解析找出判断岔开的地方。`}
+                  : `正确答案是 ${answerText}，对照解析找出判断岔开的地方。`}
               </p>
             </div>
             <button className="retry-button" type="button" onClick={onRetry}>
@@ -161,12 +234,15 @@ function QuestionCard({
               {question.options.map((option) => (
                 <div
                   className={`explanation-row ${
-                    option.key === question.answer ? 'is-answer' : ''
+                    answerKeys.includes(option.key) ? 'is-answer' : ''
                   }`}
                   key={option.key}
                 >
                   <span className="explanation-key">{option.key}</span>
-                  <p>{question.explanations[option.key]}</p>
+                  <p>
+                    {question.explanations[option.key] ??
+                      '见上方整题解析。'}
+                  </p>
                 </div>
               ))}
             </div>
@@ -181,13 +257,17 @@ function App() {
   const [view, setView] = useState<View>('practice')
   const [studyState, setStudyState] = useState<StudyState>(loadStudyState)
   const [attempts, setAttempts] = useState<
-    Partial<Record<string, OptionKey>>
+    Partial<Record<string, AnswerSelection>>
+  >({})
+  const [draftSelections, setDraftSelections] = useState<
+    Partial<Record<string, AnswerSelection>>
   >({})
   const [indices, setIndices] = useState<ViewIndices>({
     practice: 0,
     favorites: 0,
     mistakes: 0,
   })
+  const [jumpValue, setJumpValue] = useState('')
 
   useEffect(() => {
     saveStudyState(studyState)
@@ -224,6 +304,29 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const jumpToQuestion = (value = jumpValue) => {
+    const normalized = value.trim().replace(/^q/i, '')
+    if (!normalized) return
+
+    const number = Number.parseInt(normalized, 10)
+    if (!Number.isFinite(number)) return
+
+    const targetId = `q${String(number).padStart(3, '0')}`
+    const targetIndex = questions.findIndex(
+      (question) => question.id === targetId,
+    )
+
+    if (targetIndex < 0) return
+
+    setView('practice')
+    setIndices((current) => ({
+      ...current,
+      practice: targetIndex,
+    }))
+    setJumpValue('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const moveQuestion = (direction: -1 | 1) => {
     setIndices((current) => ({
       ...current,
@@ -235,16 +338,19 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const answerQuestion = (answer: OptionKey) => {
+  const answerQuestion = (answer: AnswerSelection) => {
     if (!currentQuestion || attempts[currentQuestion.id]) return
+
+    const answerKeys = normalizeAnswer(currentQuestion.answer)
+    const submittedAnswer = [...answer].sort()
 
     setAttempts((current) => ({
       ...current,
-      [currentQuestion.id]: answer,
+      [currentQuestion.id]: submittedAnswer,
     }))
 
     setStudyState((current) => {
-      const isWrong = answer !== currentQuestion.answer
+      const isWrong = !sameAnswerSet(submittedAnswer, answerKeys)
       return {
         ...current,
         answeredIds: uniqueAdd(current.answeredIds, currentQuestion.id),
@@ -260,6 +366,14 @@ function App() {
           : current.wrongCounts,
       }
     })
+  }
+
+  const updateDraftSelection = (answer: AnswerSelection) => {
+    if (!currentQuestion) return
+    setDraftSelections((current) => ({
+      ...current,
+      [currentQuestion.id]: answer,
+    }))
   }
 
   const toggleFavorite = () => {
@@ -289,6 +403,11 @@ function App() {
       delete next[currentQuestion.id]
       return next
     })
+    setDraftSelections((current) => {
+      const next = { ...current }
+      delete next[currentQuestion.id]
+      return next
+    })
   }
 
   return (
@@ -302,7 +421,7 @@ function App() {
             <i />
           </div>
           <div>
-            <span className="brand-code">BMB / 59</span>
+            <span className="brand-code">BMB / {questions.length}</span>
             <strong>生化分子题库</strong>
           </div>
         </div>
@@ -368,7 +487,7 @@ function App() {
           </div>
           <div className="specimen-label" aria-label="题库总数">
             <span>QUESTION BANK</span>
-            <strong>59</strong>
+            <strong>{questions.length}</strong>
             <small>ITEMS</small>
           </div>
         </header>
@@ -389,11 +508,31 @@ function App() {
                   />
                 </div>
               </div>
-              <span className="queue-hint">
-                {view === 'practice'
-                  ? '按原题库顺序'
-                  : `当前共 ${queue.length} 道`}
-              </span>
+              <div className="queue-tools">
+                <form
+                  className="jump-box"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    jumpToQuestion()
+                  }}
+                  aria-label="按题号跳转"
+                >
+                  <input
+                    id="question-jump"
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="输入题号"
+                    value={jumpValue}
+                    onChange={(event) => setJumpValue(event.target.value)}
+                  />
+                  <button type="submit">GO</button>
+                </form>
+                <span className="queue-hint">
+                  {view === 'practice'
+                    ? '按原题库顺序'
+                    : `当前共 ${queue.length} 道`}
+                </span>
+              </div>
             </div>
 
             <div className="question-stage">
@@ -411,10 +550,12 @@ function App() {
               <QuestionCard
                 question={currentQuestion}
                 selected={attempts[currentQuestion.id]}
+                draft={draftSelections[currentQuestion.id] ?? []}
                 isFavorite={favoriteSet.has(currentQuestion.id)}
                 wrongCount={studyState.wrongCounts[currentQuestion.id] ?? 0}
                 view={view}
                 onAnswer={answerQuestion}
+                onDraftChange={updateDraftSelection}
                 onToggleFavorite={toggleFavorite}
                 onRemoveMistake={removeMistake}
                 onRetry={retryQuestion}

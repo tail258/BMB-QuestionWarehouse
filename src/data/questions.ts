@@ -1,4 +1,7 @@
-// 此文件由 scripts/generate-questions.mjs 从题库 Markdown 生成。
+// 基础题库由 scripts/generate-questions.mjs 从题库 Markdown 生成。
+import { pptOptionExplanations } from './pptOptionExplanations'
+import { pptQuestions } from './pptQuestions'
+
 export type OptionKey = 'A' | 'B' | 'C' | 'D' | 'E'
 
 export interface Question {
@@ -6,11 +9,13 @@ export interface Question {
   topic: string
   stem: string
   options: Array<{ key: OptionKey; text: string }>
-  answer: OptionKey
+  answer: OptionKey | OptionKey[]
+  explanation?: string
   explanations: Partial<Record<OptionKey, string>>
+  tags?: string[]
 }
 
-export const questions = [
+const baseQuestions = [
   {
     "id": "q001",
     "topic": "基因重组与分子生物学技术",
@@ -2016,4 +2021,15 @@ export const questions = [
       "D": "错误。snRNA+蛋白是snRNP，不是核酶。"
     }
   }
+] as Question[]
+
+const normalizedPptQuestions = pptQuestions.map((question) => ({
+  ...question,
+  explanation: undefined,
+  explanations: pptOptionExplanations[question.id] ?? question.explanations,
+}))
+
+export const questions = [
+  ...baseQuestions,
+  ...normalizedPptQuestions,
 ] as Question[]
