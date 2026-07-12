@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { Icon } from './Icons'
 import { questions, type OptionKey, type Question } from './data/questions'
+import { questionTranslations } from './data/questionTranslations'
 import {
   loadStudyState,
   saveStudyState,
@@ -86,6 +87,7 @@ function QuestionCard({
   onRemoveMistake: () => void
   onRetry: () => void
 }) {
+  const [showTranslation, setShowTranslation] = useState(false)
   const answerKeys = normalizeAnswer(question.answer)
   const answerText = formatAnswer(answerKeys)
   const isMultiple = answerKeys.length > 1
@@ -93,6 +95,11 @@ function QuestionCard({
   const selectedKeys = selected ?? []
   const isCorrect = revealed && sameAnswerSet(selectedKeys, answerKeys)
   const canSubmit = draft.length > 0
+  const translation = questionTranslations[question.id]
+
+  useEffect(() => {
+    setShowTranslation(false)
+  }, [question.id])
 
   const chooseOption = (option: OptionKey) => {
     if (revealed) return
@@ -126,6 +133,18 @@ function QuestionCard({
               移出错题本
             </button>
           )}
+          {translation && (
+            <button
+              className={`translate-button ${showTranslation ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => setShowTranslation((visible) => !visible)}
+              aria-expanded={showTranslation}
+              title={showTranslation ? '收起中文对照' : '显示中文对照'}
+            >
+              <Icon name="translate" size={17} />
+              {showTranslation ? '收起对照' : '一键翻译'}
+            </button>
+          )}
           <button
             className={`favorite-button ${isFavorite ? 'is-active' : ''}`}
             type="button"
@@ -140,6 +159,12 @@ function QuestionCard({
       </div>
 
       <h2 className="question-stem">{question.stem}</h2>
+      {showTranslation && translation && (
+        <p className="stem-translation" lang="zh-CN">
+          <span>中文</span>
+          {translation.stem}
+        </p>
+      )}
       {isMultiple && !revealed && (
         <p className="multi-select-hint">
           多选题：先选择所有你认为正确的选项，再提交答案。
@@ -176,7 +201,14 @@ function QuestionCard({
               aria-pressed={isSelected}
             >
               <span className="option-key">{option.key}</span>
-              <span className="option-text">{option.text}</span>
+              <span className="option-text">
+                <span>{option.text}</span>
+                {showTranslation && translation?.options?.[option.key] && (
+                  <span className="option-translation" lang="zh-CN">
+                    {translation.options[option.key]}
+                  </span>
+                )}
+              </span>
               {!revealed && isMultiple && isSelected && (
                 <span className="option-mark">•</span>
               )}

@@ -7,6 +7,7 @@ interface IconProps {
     | 'chevron-right'
     | 'x'
     | 'refresh'
+    | 'translate'
   size?: number
 }
 
@@ -34,6 +35,12 @@ export function Icon({ name, size = 20 }: IconProps) {
       <>
         <path d="M20 7v5h-5" />
         <path d="M18.5 16a8 8 0 1 1 .7-7.2L20 12" />
+      </>
+    ),
+    translate: (
+      <>
+        <path d="M4 5h10M9 3v2M6 5c.5 3.1 2.3 5.7 5 7.5M12 5c-.5 3.2-2.5 6.1-6 8" />
+        <path d="m13 20 3.5-9 3.5 9M14.3 17h4.4" />
       </>
     ),
   }
